@@ -1,0 +1,83 @@
+import {
+	WardenFmVehicleSession,
+	type WardenFmCapability,
+} from '../session'
+
+describe('WardenFmVehicleSession', () => {
+	const capabilities: WardenFmCapability[] = [
+		'audio_output',
+		'play_pause',
+		'next_previous',
+		'microphone',
+		'adb_execution',
+	]
+
+	const createSession = () => {
+		let id = 0
+		return new WardenFmVehicleSession({
+			now: () => '2026-09-02T03:00:00+05:30',
+			idFactory: () => `evt-${++id}`,
+		})
+	}
+
+	it('admits bounded media capabilities and hard-denies ADB', () => {
+		const session = createSession()
+
+		session.connect('android-auto', capabilities)
+
+		expect(session.state).toBe('active')
+		expect(session.canExecute('audio_output')).toBe(true)
+		expect(session.canExecute('play_pause')).toBe(true)
+		expect(session.canExecute('next_previous')).toBe(true)
+		expect(session.canExecute('microphone')).toBe(false)
+		expect(session.canExecute('adb_execution')).toBe(false)
+	})
+
+	it('records the governed connection evidence spine in order', () => {
+		const session = createSession()
+
+		session.connect('android-auto', capabilities)
+
+		expect(session.events.map((event) => event.type)).toEqual([
+			'VEHICLE_TRANSPORT_DISCOVERED',
+			'WARDEN_CAPABILITY_REQUESTED',
+			'WARDEN_CAPABILITY_DECIDED',
+			'VEHICLE_CONNECTOR_SESSION_STARTED',
+		])
+		expect(session.events[2].payload.decisions).toEqual({
+			audio_output: 'allow',
+			play_pause: 'allow',
+			next_previous: 'allow',
+			microphone: 'deny',
+			adb_execution: 'deny',
+		})
+	})
+
+	it('requires an active vehicle session before authorizing a vehicle command', () => {
+		const session = createSession()
+
+		expect(session.authorizeMediaCommand('next')).toBe(false)
+
+		session.connect('android-auto', capabilities)
+		expect(session.authorizeMediaCommand('next')).toBe(true)
+
+		session.disconnect()
+		expect(session.authorizeMediaCommand('next')).toBe(false)
+		expect(session.state).toBe('closed')
+	})
+
+	it('never permits ADB even if it is requested explicitly', () => {
+		const session = createSession()
+
+		session.connect('android-auto', ['adb_execution'])
+
+		expect(session.canExecute('adb_execution')).toBe(false)
+		expect(
+			session.events.some(
+				(event) =>
+					event.type === 'WARDEN_CAPABILITY_DECIDED' &&
+					event.payload.decisions?.adb_execution === 'deny',
+			),
+		).toBe(true)
+	})
+})
