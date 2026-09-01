@@ -18,6 +18,10 @@ export function connectWardenFmVehicle(transport: WardenFmTransport): void {
 	wardenFmVehicleSession.connect(transport, WARDENFM_STANDARD_CAPABILITIES)
 }
 
+export function failClosedWardenFmVehicle(transport: WardenFmTransport): void {
+	wardenFmVehicleSession.connect(transport, [])
+}
+
 export function disconnectWardenFmVehicle(): void {
 	wardenFmVehicleSession.disconnect()
 }
