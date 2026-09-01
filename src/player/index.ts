@@ -1,8 +1,16 @@
+import { Platform } from 'react-native'
 import TrackPlayer, { Event } from 'react-native-track-player'
 import { SKIP_TO_PREVIOUS_THRESHOLD } from '../configs/player.config'
 import { CarPlay } from 'react-native-carplay'
+import { initializeAndroidAutoProjection } from '../wardenfm/android-connection'
+import { createNativeAndroidCarConnectionPort } from '../wardenfm/native-android-car-connection'
 import { createGovernedPlaybackHandlers } from '../wardenfm/playback-gate'
-import { wardenFmVehicleSession } from '../wardenfm/runtime'
+import {
+	connectWardenFmVehicle,
+	disconnectWardenFmVehicle,
+	failClosedWardenFmVehicle,
+	wardenFmVehicleSession,
+} from '../wardenfm/runtime'
 
 /**
  * Jellify Playback Service.
@@ -14,6 +22,23 @@ import { wardenFmVehicleSession } from '../wardenfm/runtime'
  * remains the media engine and does not grant itself vehicle authority.
  */
 export async function PlaybackService() {
+	if (Platform.OS === 'android') {
+		const androidConnectionPort = createNativeAndroidCarConnectionPort()
+		if (!androidConnectionPort) {
+			failClosedWardenFmVehicle('android-auto')
+		} else {
+			try {
+				await initializeAndroidAutoProjection(
+					androidConnectionPort,
+					() => connectWardenFmVehicle('android-auto'),
+					() => disconnectWardenFmVehicle(),
+				)
+			} catch {
+				failClosedWardenFmVehicle('android-auto')
+			}
+		}
+	}
+
 	const governed = createGovernedPlaybackHandlers(
 		wardenFmVehicleSession,
 		TrackPlayer,
