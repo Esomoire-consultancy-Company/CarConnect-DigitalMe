@@ -1,5 +1,16 @@
 name: Build Android APK
 on:
+  push:
+    branches:
+      - 'feature/wardenfm-r0.1-hardware-android'
+    paths:
+      - '.github/workflows/build-android.yml'
+      - 'android/**'
+      - 'src/wardenfm/**'
+      - 'src/player/**'
+      - 'App.tsx'
+      - 'index.js'
+      - 'package.json'
   pull_request:
     paths:
       - '.github/workflows/build-android.yml'
@@ -80,7 +91,7 @@ jobs:
         uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: wardenfm-android-pr-${{ github.event.number }}-${{ env.VERSION_NUMBER }}
+          name: wardenfm-android-${{ github.event.pull_request.number || github.run_number }}-${{ env.VERSION_NUMBER }}
           path: |
             android/app/build/outputs/apk/release/*.apk
           retention-days: 7
