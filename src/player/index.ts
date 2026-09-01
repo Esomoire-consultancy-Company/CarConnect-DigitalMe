@@ -1,34 +1,31 @@
 import TrackPlayer, { Event } from 'react-native-track-player'
 import { SKIP_TO_PREVIOUS_THRESHOLD } from '../configs/player.config'
 import { CarPlay } from 'react-native-carplay'
+import { createGovernedPlaybackHandlers } from '../wardenfm/playback-gate'
+import { wardenFmVehicleSession } from '../wardenfm/runtime'
 
 /**
  * Jellify Playback Service.
  *
  * Sets up event listeners for remote control events and
- * runs for the duration of the app lifecycle
+ * runs for the duration of the app lifecycle.
+ *
+ * Vehicle-originated effects are fail-closed through WardenFM. TrackPlayer
+ * remains the media engine and does not grant itself vehicle authority.
  */
 export async function PlaybackService() {
-	TrackPlayer.addEventListener(Event.RemotePlay, async () => {
-		await TrackPlayer.play()
-	})
-	TrackPlayer.addEventListener(Event.RemotePause, async () => {
-		await TrackPlayer.pause()
-	})
+	const governed = createGovernedPlaybackHandlers(
+		wardenFmVehicleSession,
+		TrackPlayer,
+		SKIP_TO_PREVIOUS_THRESHOLD,
+	)
 
-	TrackPlayer.addEventListener(Event.RemoteNext, async () => {
-		await TrackPlayer.skipToNext()
-	})
-
-	TrackPlayer.addEventListener(Event.RemotePrevious, async () => {
-		const progress = await TrackPlayer.getProgress()
-
-		if (progress.position < SKIP_TO_PREVIOUS_THRESHOLD) await TrackPlayer.skipToPrevious()
-		else await TrackPlayer.seekTo(0)
-	})
-
+	TrackPlayer.addEventListener(Event.RemotePlay, governed.play)
+	TrackPlayer.addEventListener(Event.RemotePause, governed.pause)
+	TrackPlayer.addEventListener(Event.RemoteNext, governed.next)
+	TrackPlayer.addEventListener(Event.RemotePrevious, governed.previous)
 	TrackPlayer.addEventListener(Event.RemoteSeek, async (event) => {
-		await TrackPlayer.seekTo(event.position)
+		await governed.seek(event.position)
 	})
 }
 
