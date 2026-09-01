@@ -1,4 +1,4 @@
-import type { WardenFmVehicleSession } from './session'
+import type { WardenFmMediaCommand, WardenFmVehicleSession } from './session'
 
 export interface WardenFmPlayerPort {
 	play(): Promise<void>
@@ -17,6 +17,9 @@ export interface GovernedPlaybackHandlers {
 	seek(position: number): Promise<void>
 }
 
+const mayExecute = (session: WardenFmVehicleSession, command: WardenFmMediaCommand) =>
+	session.state !== 'active' || session.authorizeMediaCommand(command)
+
 export function createGovernedPlaybackHandlers(
 	session: WardenFmVehicleSession,
 	player: WardenFmPlayerPort,
@@ -24,25 +27,25 @@ export function createGovernedPlaybackHandlers(
 ): GovernedPlaybackHandlers {
 	return {
 		async play() {
-			if (!session.authorizeMediaCommand('play')) return
+			if (!mayExecute(session, 'play')) return
 			await player.play()
 		},
 		async pause() {
-			if (!session.authorizeMediaCommand('pause')) return
+			if (!mayExecute(session, 'pause')) return
 			await player.pause()
 		},
 		async next() {
-			if (!session.authorizeMediaCommand('next')) return
+			if (!mayExecute(session, 'next')) return
 			await player.skipToNext()
 		},
 		async previous() {
-			if (!session.authorizeMediaCommand('previous')) return
+			if (!mayExecute(session, 'previous')) return
 			const progress = await player.getProgress()
 			if (progress.position < previousThreshold) await player.skipToPrevious()
 			else await player.seekTo(0)
 		},
 		async seek(position: number) {
-			if (!session.authorizeMediaCommand('seek')) return
+			if (!mayExecute(session, 'seek')) return
 			await player.seekTo(position)
 		},
 	}
