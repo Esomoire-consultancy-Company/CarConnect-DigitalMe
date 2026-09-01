@@ -1,4 +1,7 @@
-import { registerAndroidAutoProjection } from '../android-connection'
+import {
+	initializeAndroidAutoProjection,
+	registerAndroidAutoProjection,
+} from '../android-connection'
 
 type Listener = (type: number) => void
 
@@ -20,7 +23,7 @@ const makePort = (initial: number) => {
 	}
 }
 
-describe('registerAndroidAutoProjection', () => {
+describe('Android Auto projection observation', () => {
 	it('opens only when Android Auto projection is observed', async () => {
 		const source = makePort(0)
 		const events: string[] = []
@@ -74,5 +77,20 @@ describe('registerAndroidAutoProjection', () => {
 
 		cleanup()
 		expect(source.wasRemoved()).toBe(true)
+	})
+
+	it('establishes headless projection state before returning', async () => {
+		const source = makePort(2)
+		const events: string[] = []
+		const cleanup = await initializeAndroidAutoProjection(
+			source.port,
+			() => events.push('connect'),
+			() => events.push('disconnect'),
+		)
+
+		expect(events).toEqual(['connect'])
+		source.emit(0)
+		expect(events).toEqual(['connect', 'disconnect'])
+		cleanup()
 	})
 })
