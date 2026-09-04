@@ -1,3 +1,5 @@
+import type { MobilityEffect } from './mobility/admission'
+import type { MobilityEffectPort } from './mobility/coordinator'
 import type { WardenFmMediaCommand, WardenFmVehicleSession } from './session'
 
 export interface WardenFmPlayerPort {
@@ -47,6 +49,36 @@ export function createGovernedPlaybackHandlers(
 		async seek(position: number) {
 			if (!mayExecute(session, 'seek')) return
 			await player.seekTo(position)
+		},
+	}
+}
+
+export function createMobilityPlaybackEffectPort(
+	player: WardenFmPlayerPort,
+): MobilityEffectPort {
+	return {
+		async execute(effect: MobilityEffect) {
+			switch (effect) {
+				case 'DUCK_MEDIA':
+				case 'PAUSE_MEDIA':
+					await player.pause()
+					return
+				case 'RESUME_MEDIA':
+					await player.play()
+					return
+				case 'NEXT_MEDIA':
+					await player.skipToNext()
+					return
+				case 'PREVIOUS_MEDIA':
+					await player.skipToPrevious()
+					return
+				case 'APPLY_CONTEXT_PROFILE':
+				case 'VOICE_EXPLANATION':
+				case 'DIGITAL_MIRROR_GRANT':
+					return
+				default:
+					throw new Error('Unsupported mobility playback effect')
+			}
 		},
 	}
 }
