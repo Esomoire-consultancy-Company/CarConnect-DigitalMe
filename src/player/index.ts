@@ -12,6 +12,8 @@ import {
 	wardenFmVehicleSession,
 } from '../wardenfm/runtime'
 
+let unregisterAndroidAutoProjection: (() => void) | undefined
+
 /**
  * Jellify Playback Service.
  *
@@ -23,17 +25,21 @@ import {
  */
 export async function PlaybackService() {
 	if (Platform.OS === 'android') {
+		unregisterAndroidAutoProjection?.()
+		unregisterAndroidAutoProjection = undefined
+
 		const androidConnectionPort = createNativeAndroidCarConnectionPort()
 		if (!androidConnectionPort) {
 			failClosedWardenFmVehicle('android-auto')
 		} else {
 			try {
-				await initializeAndroidAutoProjection(
+				unregisterAndroidAutoProjection = await initializeAndroidAutoProjection(
 					androidConnectionPort,
 					() => connectWardenFmVehicle('android-auto'),
 					() => disconnectWardenFmVehicle(),
 				)
 			} catch {
+				unregisterAndroidAutoProjection = undefined
 				failClosedWardenFmVehicle('android-auto')
 			}
 		}
