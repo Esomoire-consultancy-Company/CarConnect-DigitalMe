@@ -1,3 +1,8 @@
+import type { WardenMobilityAdmissionPort } from './mobility/admission'
+import {
+	WardenMobilityCoordinator,
+	type MobilityEffectPort,
+} from './mobility/coordinator'
 import {
 	WardenFmVehicleSession,
 	type WardenFmCapability,
@@ -24,4 +29,11 @@ export function failClosedWardenFmVehicle(transport: WardenFmTransport): void {
 
 export function disconnectWardenFmVehicle(): void {
 	wardenFmVehicleSession.disconnect()
+}
+
+export function createWardenMobilityCoordinator(
+	warden: WardenMobilityAdmissionPort,
+	effects: MobilityEffectPort,
+): WardenMobilityCoordinator {
+	return new WardenMobilityCoordinator(warden, effects)
 }
