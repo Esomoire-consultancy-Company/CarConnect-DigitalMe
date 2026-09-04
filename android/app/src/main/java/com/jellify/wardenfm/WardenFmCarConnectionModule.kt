@@ -16,7 +16,7 @@ class WardenFmCarConnectionModule(
   private val mainHandler = Handler(Looper.getMainLooper())
   private var carConnection: CarConnection? = null
   private var currentType = CarConnection.CONNECTION_TYPE_NOT_CONNECTED
-  private var listenerCount = 0
+  @Volatile private var listenerCount = 0
 
   private val observer = Observer<Int> { value ->
     currentType = value ?: CarConnection.CONNECTION_TYPE_NOT_CONNECTED
@@ -27,14 +27,25 @@ class WardenFmCarConnectionModule(
 
   override fun initialize() {
     super.initialize()
-    mainHandler.post { ensureConnection() }
+    mainHandler.post {
+      try {
+        ensureConnection()
+      } catch (_: Throwable) {
+        currentType = CarConnection.CONNECTION_TYPE_NOT_CONNECTED
+      }
+    }
   }
 
   @ReactMethod
   fun getConnectionType(promise: Promise) {
     mainHandler.post {
-      ensureConnection()
-      promise.resolve(currentType)
+      try {
+        ensureConnection()
+        promise.resolve(currentType)
+      } catch (_: Throwable) {
+        currentType = CarConnection.CONNECTION_TYPE_NOT_CONNECTED
+        promise.resolve(currentType)
+      }
     }
   }
 
