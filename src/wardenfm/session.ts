@@ -49,15 +49,38 @@ const decisionFor = (capability: WardenFmCapability): WardenFmDecision => {
 	return 'deny'
 }
 
-const capabilityForCommand = (command: WardenFmMediaCommand): WardenFmCapability => {
-	if (command === 'next' || command === 'previous') return 'next_previous'
-	return 'play_pause'
+const capabilityForCommand = (
+	command: WardenFmMediaCommand,
+): WardenFmCapability | undefined => {
+	switch (command) {
+		case 'next':
+		case 'previous':
+			return 'next_previous'
+		case 'play':
+		case 'pause':
+		case 'seek':
+			return 'play_pause'
+		default:
+			return undefined
+	}
 }
 
-export class WardenFmVehicleSession {
-	public state: WardenFmSessionState = 'idle'
-	public readonly events: WardenFmEvent[] = []
+const cloneEvent = (event: WardenFmEvent): WardenFmEvent => ({
+	...event,
+	payload: {
+		...event.payload,
+		capabilities: event.payload.capabilities
+			? [...event.payload.capabilities]
+			: undefined,
+		decisions: event.payload.decisions
+			? { ...event.payload.decisions }
+			: undefined,
+	},
+})
 
+export class WardenFmVehicleSession {
+	private sessionState: WardenFmSessionState = 'idle'
+	private readonly eventLog: WardenFmEvent[] = []
 	private readonly decisions = new Map<WardenFmCapability, WardenFmDecision>()
 	private readonly now: () => string
 	private readonly idFactory: () => string
@@ -65,11 +88,19 @@ export class WardenFmVehicleSession {
 	public constructor(dependencies: WardenFmVehicleSessionDependencies = {}) {
 		this.now = dependencies.now ?? (() => new Date().toISOString())
 		this.idFactory =
-			dependencies.idFactory ?? (() => `${Date.now()}-${this.events.length + 1}`)
+			dependencies.idFactory ?? (() => `${Date.now()}-${this.eventLog.length + 1}`)
+	}
+
+	public get state(): WardenFmSessionState {
+		return this.sessionState
+	}
+
+	public get events(): readonly WardenFmEvent[] {
+		return this.eventLog.map(cloneEvent)
 	}
 
 	public connect(transport: WardenFmTransport, capabilities: WardenFmCapability[]): void {
-		if (this.state === 'active') return
+		if (this.sessionState === 'active') this.disconnect()
 
 		this.decisions.clear()
 		const decisions: Partial<Record<WardenFmCapability, WardenFmDecision>> = {}
@@ -82,31 +113,32 @@ export class WardenFmVehicleSession {
 		this.append('VEHICLE_TRANSPORT_DISCOVERED', { transport })
 		this.append('WARDEN_CAPABILITY_REQUESTED', { capabilities: [...capabilities] })
 		this.append('WARDEN_CAPABILITY_DECIDED', { decisions })
-		this.state = 'active'
+		this.sessionState = 'active'
 		this.append('VEHICLE_CONNECTOR_SESSION_STARTED', { transport })
 	}
 
 	public disconnect(): void {
-		if (this.state !== 'active') return
-		this.state = 'closed'
+		if (this.sessionState !== 'active') return
+		this.sessionState = 'closed'
+		this.decisions.clear()
 		this.append('VEHICLE_CONNECTOR_SESSION_ENDED', {})
 	}
 
 	public canExecute(capability: WardenFmCapability): boolean {
-		if (this.state !== 'active') return false
+		if (this.sessionState !== 'active') return false
 		if (capability === 'adb_execution') return false
 		return this.decisions.get(capability) === 'allow'
 	}
 
 	public authorizeMediaCommand(command: WardenFmMediaCommand): boolean {
 		const capability = capabilityForCommand(command)
-		if (!this.canExecute(capability)) return false
+		if (!capability || !this.canExecute(capability)) return false
 		this.append('MEDIA_COMMAND_RECEIVED', { command, capability })
 		return true
 	}
 
 	private append(type: WardenFmEventType, payload: WardenFmEventPayload): void {
-		this.events.push({
+		this.eventLog.push({
 			id: this.idFactory(),
 			at: this.now(),
 			type,
