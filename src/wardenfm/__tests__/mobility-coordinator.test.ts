@@ -2,6 +2,8 @@ import { readFileSync } from 'fs'
 import { normalizeMobilityContext } from '../mobility/context'
 import { WardenMobilityCoordinator } from '../mobility/coordinator'
 import { MobilityEvidenceSpine } from '../mobility/evidence'
+import { normalizeGestureCandidate } from '../mobility/gesture'
+import { normalizeVoiceIntentCandidate } from '../mobility/voice-intent'
 
 describe('Warden mobility coordinator', () => {
 	const makeEvidence = () => {
@@ -11,6 +13,18 @@ describe('Warden mobility coordinator', () => {
 			now: () => '2026-09-04T12:00:00.000Z',
 		})
 	}
+
+	const makeCoordinator = (evidence: MobilityEvidenceSpine) =>
+		new WardenMobilityCoordinator(
+			{
+				decide: async () => ({
+					allowed: true,
+					wardenDecisionRef: 'w-allow',
+				}),
+			},
+			{ execute: async () => undefined },
+			evidence,
+		)
 
 	it('does not execute a recommended media profile when Warden denies it', async () => {
 		const effects: string[] = []
@@ -79,6 +93,58 @@ describe('Warden mobility coordinator', () => {
 			'MOBILITY_EFFECT_VERIFIED',
 		])
 		expect(evidence.events[2].priorEventRef).toBe('m-2')
+	})
+
+	it('records bounded voice, gesture, and step-up evidence without raw media', () => {
+		const evidence = makeEvidence()
+		const coordinator = makeCoordinator(evidence)
+		const voice = normalizeVoiceIntentCandidate({
+			intent: 'PAUSE_MEDIA',
+			confidence: 0.92,
+			threshold: 0.8,
+			sourceRef: 'voice-1',
+			sessionRef: 'dm-session-1',
+		})
+		const gesture = normalizeGestureCandidate({
+			token: 'THUMBS_UP',
+			confidence: 0.95,
+			threshold: 0.8,
+			sourceRef: 'gesture-1',
+			sessionRef: 'dm-session-1',
+		})
+
+		coordinator.recordVoiceIntent(voice)
+		coordinator.recordGestureToken(gesture)
+		coordinator.recordStepUpConfirmationRequest(
+			'dm-session-1',
+			'challenge-1',
+			'context-media-routing',
+		)
+		coordinator.recordStepUpConfirmationDecision(
+			'dm-session-1',
+			'challenge-1',
+			'gesture-1',
+			true,
+			'w-stepup-1',
+		)
+
+		expect(evidence.events.map((event) => event.type)).toEqual([
+			'VOICE_INTENT_RECOGNIZED',
+			'GESTURE_TOKEN_RECOGNIZED',
+			'STEP_UP_CONFIRMATION_REQUESTED',
+			'STEP_UP_CONFIRMATION_DECIDED',
+		])
+		expect(evidence.events[0].payload).toEqual({
+			voiceIntentToken: 'PAUSE_MEDIA',
+			confidence: 0.92,
+			sourceRef: 'voice-1',
+		})
+		expect(evidence.events[1].payload).toEqual({
+			gestureToken: 'THUMBS_UP',
+			confidence: 0.95,
+			sourceRef: 'gesture-1',
+		})
+		expect(evidence.events[3].wardenDecisionRef).toBe('w-stepup-1')
 	})
 
 	it('exposes no safety-critical vehicle actuation effect', () => {
