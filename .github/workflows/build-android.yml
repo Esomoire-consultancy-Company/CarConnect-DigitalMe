@@ -63,12 +63,7 @@ jobs:
         run: bun i
 
       - name: 🛡 Run WardenFM contract tests
-        run: >-
-          bunx jest
-          src/wardenfm/__tests__/session.test.ts
-          src/wardenfm/__tests__/playback-gate.test.ts
-          src/wardenfm/__tests__/android-connection.test.ts
-          --runInBand
+        run: bunx jest src/wardenfm/__tests__ --runInBand
 
       - name: 🚀 Build Android release APK
         run: bun android-build
