@@ -1,5 +1,8 @@
 import { WardenFmVehicleSession } from '../session'
-import { createGovernedPlaybackHandlers } from '../playback-gate'
+import {
+	createGovernedPlaybackHandlers,
+	createMobilityPlaybackEffectPort,
+} from '../playback-gate'
 
 const connect = (session: WardenFmVehicleSession) =>
 	session.connect('android-auto', [
@@ -105,5 +108,21 @@ describe('createGovernedPlaybackHandlers', () => {
 		await handlers.next()
 
 		expect(player.calls).toEqual(['next'])
+	})
+
+	it('maps admitted DUCK_MEDIA to pause without adding vehicle authority', async () => {
+		const player = makePlayer()
+		const port = createMobilityPlaybackEffectPort(player.port)
+		await port.execute('DUCK_MEDIA')
+		expect(player.calls).toEqual(['pause'])
+	})
+
+	it('rejects unsupported mobility effects at the playback boundary', async () => {
+		const player = makePlayer()
+		const port = createMobilityPlaybackEffectPort(player.port)
+		await expect(port.execute('STEER' as never)).rejects.toThrow(
+			'Unsupported mobility playback effect',
+		)
+		expect(player.calls).toEqual([])
 	})
 })
