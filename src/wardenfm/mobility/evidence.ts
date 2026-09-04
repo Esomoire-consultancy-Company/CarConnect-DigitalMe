@@ -21,6 +21,11 @@ export type MobilityRiverEvent = {
 	priorEventRef?: string
 }
 
+export type MobilityEvidenceSpineDependencies = {
+	idFactory?: () => string
+	now?: () => string
+}
+
 const FORBIDDEN_KEY =
 	/(rawframe|audiorecording|voiceprint|biometrictemplate|providersecret|password|credential|accesstoken|providertoken|refreshtoken)/i
 
@@ -42,4 +47,45 @@ export function createMobilityEvidenceEvent(
 ): MobilityRiverEvent {
 	assertSafe(event.payload)
 	return { ...event, payload: { ...event.payload } }
+}
+
+export class MobilityEvidenceSpine {
+	private readonly records: MobilityRiverEvent[] = []
+	private readonly lastEventBySession = new Map<string, string>()
+	private readonly idFactory: () => string
+	private readonly now: () => string
+
+	public constructor(dependencies: MobilityEvidenceSpineDependencies = {}) {
+		this.idFactory =
+			dependencies.idFactory ?? (() => `${Date.now()}-${this.records.length + 1}`)
+		this.now = dependencies.now ?? (() => new Date().toISOString())
+	}
+
+	public get events(): MobilityRiverEvent[] {
+		return this.records.map((event) => ({
+			...event,
+			payload: { ...event.payload },
+		}))
+	}
+
+	public append(
+		sessionRef: string,
+		type: MobilityRiverEventType,
+		payload: Record<string, unknown>,
+		wardenDecisionRef?: string,
+	): MobilityRiverEvent {
+		const event = createMobilityEvidenceEvent({
+			eventId: this.idFactory(),
+			sessionRef,
+			type,
+			at: this.now(),
+			payload,
+			wardenDecisionRef,
+			priorEventRef: this.lastEventBySession.get(sessionRef),
+		})
+
+		this.records.push(event)
+		this.lastEventBySession.set(sessionRef, event.eventId)
+		return { ...event, payload: { ...event.payload } }
+	}
 }
