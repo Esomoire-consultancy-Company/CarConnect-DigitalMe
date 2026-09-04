@@ -31,7 +31,7 @@ import { CarPlay } from 'react-native-carplay'
 import { useAutoStore } from './src/stores/auto'
 import { registerAutoService } from './src/player'
 import QueryPersistenceConfig from './src/configs/query-persistence.config'
-import { registerAndroidAutoProjection } from './src/wardenfm/android-connection'
+import { initializeAndroidAutoProjection } from './src/wardenfm/android-connection'
 import { createNativeAndroidCarConnectionPort } from './src/wardenfm/native-android-car-connection'
 import {
 	connectWardenFmVehicle,
@@ -107,21 +107,26 @@ export default function App(): React.JSX.Element {
 
 		const unregisterAutoService = registerAutoService(onConnect, onDisconnect)
 		const androidConnectionPort = createNativeAndroidCarConnectionPort()
-		const unregisterAndroidAuto = androidConnectionPort
-			? registerAndroidAutoProjection(
-					androidConnectionPort,
-					() => {
-						connectWardenFmVehicle('android-auto')
-						setIsConnected(true)
-					},
-					() => {
-						disconnectWardenFmVehicle()
-						setIsConnected(false)
-					},
-				)
-			: () => undefined
+		let unregisterAndroidAuto = () => undefined
+		let disposed = false
+
+		if (androidConnectionPort) {
+			void initializeAndroidAutoProjection(
+				androidConnectionPort,
+				() => setIsConnected(true),
+				() => setIsConnected(false),
+			)
+				.then((cleanup) => {
+					if (disposed) cleanup()
+					else unregisterAndroidAuto = cleanup
+				})
+				.catch(() => {
+					if (!disposed) setIsConnected(false)
+				})
+		}
 
 		return () => {
+			disposed = true
 			unregisterAndroidAuto()
 			unregisterAutoService()
 		}
