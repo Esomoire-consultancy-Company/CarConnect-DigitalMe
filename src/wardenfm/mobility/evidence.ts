@@ -22,7 +22,7 @@ export type MobilityRiverEvent = {
 }
 
 const FORBIDDEN_KEY =
-	/(rawframe|audiorecording|voiceprint|biometrictemplate|providersecret|password|credential|token)/i
+	/(rawframe|audiorecording|voiceprint|biometrictemplate|providersecret|password|credential|accesstoken|providertoken|refreshtoken)/i
 
 function assertSafe(value: unknown, path = 'payload'): void {
 	if (!value || typeof value !== 'object') return
