@@ -1,11 +1,13 @@
 import type { WardenMobilityAdmissionPort, MobilityEffect } from './admission'
 import type { MobilityContextSnapshot } from './context'
 import { MobilityEvidenceSpine } from './evidence'
+import type { GestureResult } from './gesture'
 import {
 	recommendContextMediaProfile,
 	type ContextMediaPreferences,
 	type ContextMediaProfile,
 } from './media-router'
+import type { VoiceIntentResult } from './voice-intent'
 
 export interface MobilityEffectPort {
 	execute(effect: MobilityEffect, data?: Record<string, unknown>): Promise<void>
@@ -31,6 +33,49 @@ export class WardenMobilityCoordinator {
 			sourceRefs: [...context.sourceRefs],
 			observedAt: context.observedAt,
 		})
+	}
+
+	public recordVoiceIntent(result: VoiceIntentResult): void {
+		this.evidence?.append(result.sessionRef, 'VOICE_INTENT_RECOGNIZED', {
+			voiceIntentToken: result.intent,
+			confidence: result.confidence,
+			sourceRef: result.sourceRef,
+		})
+	}
+
+	public recordGestureToken(result: GestureResult): void {
+		this.evidence?.append(result.sessionRef, 'GESTURE_TOKEN_RECOGNIZED', {
+			gestureToken: result.token,
+			confidence: result.confidence,
+			sourceRef: result.sourceRef,
+		})
+	}
+
+	public recordStepUpConfirmationRequest(
+		digitalMeSessionRef: string,
+		challengeRef: string,
+		capability: string,
+	): void {
+		this.evidence?.append(
+			digitalMeSessionRef,
+			'STEP_UP_CONFIRMATION_REQUESTED',
+			{ challengeRef, capability },
+		)
+	}
+
+	public recordStepUpConfirmationDecision(
+		digitalMeSessionRef: string,
+		challengeRef: string,
+		confirmationRef: string,
+		confirmed: boolean,
+		wardenDecisionRef: string,
+	): void {
+		this.evidence?.append(
+			digitalMeSessionRef,
+			'STEP_UP_CONFIRMATION_DECIDED',
+			{ challengeRef, confirmationRef, confirmed },
+			wardenDecisionRef,
+		)
 	}
 
 	public async requestEffect(
