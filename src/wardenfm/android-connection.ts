@@ -14,6 +14,7 @@ export function registerAndroidAutoProjection(
 ): () => void {
 	let active = true
 	let projecting = false
+	let unsubscribed = false
 
 	const handle = (connectionType: number) => {
 		if (!active) return
@@ -25,12 +26,25 @@ export function registerAndroidAutoProjection(
 	}
 
 	const unsubscribe = port.subscribe(handle)
-	void port.getConnectionType().then(handle)
-
-	return () => {
+	const stop = () => {
+		if (!active && unsubscribed) return
 		active = false
-		unsubscribe()
+		if (!unsubscribed) {
+			unsubscribed = true
+			unsubscribe()
+		}
 	}
+
+	void port
+		.getConnectionType()
+		.then(handle)
+		.catch(() => {
+			if (!active) return
+			stop()
+			onDisconnect()
+		})
+
+	return stop
 }
 
 export async function initializeAndroidAutoProjection(
@@ -41,6 +55,7 @@ export async function initializeAndroidAutoProjection(
 	let active = true
 	let projecting = false
 	let receivedLiveUpdate = false
+	let unsubscribed = false
 
 	const handle = (connectionType: number) => {
 		if (!active) return
@@ -55,12 +70,23 @@ export async function initializeAndroidAutoProjection(
 		receivedLiveUpdate = true
 		handle(connectionType)
 	})
+	const stop = () => {
+		if (!active && unsubscribed) return
+		active = false
+		if (!unsubscribed) {
+			unsubscribed = true
+			unsubscribe()
+		}
+	}
 
-	const initialConnectionType = await port.getConnectionType()
+	let initialConnectionType: number
+	try {
+		initialConnectionType = await port.getConnectionType()
+	} catch (error) {
+		stop()
+		throw error
+	}
 	if (!receivedLiveUpdate) handle(initialConnectionType)
 
-	return () => {
-		active = false
-		unsubscribe()
-	}
+	return stop
 }
