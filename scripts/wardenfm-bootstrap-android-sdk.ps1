@@ -19,10 +19,11 @@ if (-not (Test-Path $JavaExe)) {
   throw "Android Studio JBR was not found at $JavaExe"
 }
 
-$NodeExe = Join-Path $env:USERPROFILE 'node.exe'
-if (-not (Test-Path $NodeExe)) {
-  throw "Node was not found at $NodeExe"
+$NodeCommand = Get-Command node -CommandType Application -ErrorAction SilentlyContinue
+if (-not $NodeCommand) {
+  throw 'Node was not found on PATH'
 }
+$NodeExe = $NodeCommand.Source
 
 Write-Host "WardenFM Android SDK bootstrap"
 Write-Host "SDK root: $SdkRoot"
