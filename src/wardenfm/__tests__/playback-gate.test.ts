@@ -79,7 +79,7 @@ describe('createGovernedPlaybackHandlers', () => {
 		expect(player.calls).toEqual([])
 	})
 
-	it('preserves previous-track threshold semantics', async () => {
+	it('preserves previous-track threshold semantics including the exact boundary', async () => {
 		const session = new WardenFmVehicleSession()
 		connect(session)
 		const player = makePlayer()
@@ -87,10 +87,12 @@ describe('createGovernedPlaybackHandlers', () => {
 
 		player.setPosition(2)
 		await handlers.previous()
+		player.setPosition(5)
+		await handlers.previous()
 		player.setPosition(20)
 		await handlers.previous()
 
-		expect(player.calls).toEqual(['previous', 'seek:0'])
+		expect(player.calls).toEqual(['previous', 'seek:0', 'seek:0'])
 	})
 
 	it('restores normal remote controls after vehicle disconnect', async () => {
