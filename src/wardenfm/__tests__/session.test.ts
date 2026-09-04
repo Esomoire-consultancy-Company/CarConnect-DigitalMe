@@ -65,7 +65,7 @@ describe('WardenFmVehicleSession', () => {
 		expect(() => {
 			;(session as unknown as { state: string }).state = 'closed'
 		}).toThrow()
-		;(session.events as WardenFmCapability[]).length = 0
+		;(session.events as unknown as { length: number }).length = 0
 
 		expect(session.state).toBe('active')
 		expect(session.events).toHaveLength(eventCount)
@@ -106,9 +106,7 @@ describe('WardenFmVehicleSession', () => {
 		const session = createSession()
 		session.connect('android-auto', capabilities)
 
-		expect(
-			session.authorizeMediaCommand('unsupported' as never),
-		).toBe(false)
+		expect(session.authorizeMediaCommand('unsupported' as never)).toBe(false)
 	})
 
 	it('never permits ADB even if it is requested explicitly', () => {
