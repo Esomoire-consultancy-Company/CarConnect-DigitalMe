@@ -3,6 +3,7 @@ import TrackPlayer, { Event } from 'react-native-track-player'
 import { SKIP_TO_PREVIOUS_THRESHOLD } from '../configs/player.config'
 import { CarPlay } from 'react-native-carplay'
 import { initializeAndroidAutoProjection } from '../wardenfm/android-connection'
+import { AndroidAutoProjectionLifecycle } from '../wardenfm/android-projection-lifecycle'
 import { createNativeAndroidCarConnectionPort } from '../wardenfm/native-android-car-connection'
 import { createGovernedPlaybackHandlers } from '../wardenfm/playback-gate'
 import {
@@ -12,7 +13,9 @@ import {
 	wardenFmVehicleSession,
 } from '../wardenfm/runtime'
 
-let unregisterAndroidAutoProjection: (() => void) | undefined
+const androidAutoProjectionLifecycle = new AndroidAutoProjectionLifecycle(
+	initializeAndroidAutoProjection,
+)
 
 /**
  * Jellify Playback Service.
@@ -25,23 +28,16 @@ let unregisterAndroidAutoProjection: (() => void) | undefined
  */
 export async function PlaybackService() {
 	if (Platform.OS === 'android') {
-		unregisterAndroidAutoProjection?.()
-		unregisterAndroidAutoProjection = undefined
-
 		const androidConnectionPort = createNativeAndroidCarConnectionPort()
 		if (!androidConnectionPort) {
+			androidAutoProjectionLifecycle.reset(() => disconnectWardenFmVehicle())
 			failClosedWardenFmVehicle('android-auto')
 		} else {
-			try {
-				unregisterAndroidAutoProjection = await initializeAndroidAutoProjection(
-					androidConnectionPort,
-					() => connectWardenFmVehicle('android-auto'),
-					() => disconnectWardenFmVehicle(),
-				)
-			} catch {
-				unregisterAndroidAutoProjection = undefined
-				failClosedWardenFmVehicle('android-auto')
-			}
+			await androidAutoProjectionLifecycle.replace(androidConnectionPort, {
+				onConnect: () => connectWardenFmVehicle('android-auto'),
+				onDisconnect: () => disconnectWardenFmVehicle(),
+				onFailure: () => failClosedWardenFmVehicle('android-auto'),
+			})
 		}
 	}
 
