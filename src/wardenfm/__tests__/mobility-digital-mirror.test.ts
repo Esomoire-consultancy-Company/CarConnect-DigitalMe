@@ -1,4 +1,5 @@
 import { DigitalMirrorMobilityState } from '../mobility/digital-mirror'
+import { MobilityEvidenceSpine } from '../mobility/evidence'
 
 describe('Digital Mirror mobility state', () => {
 	const grant = {
@@ -11,6 +12,14 @@ describe('Digital Mirror mobility state', () => {
 		expiresAt: '2026-09-04T13:00:00.000Z',
 		wardenDecisionRef: 'warden-1',
 		riverEvidenceRef: 'river-1',
+	}
+
+	const makeEvidence = () => {
+		let id = 0
+		return new MobilityEvidenceSpine({
+			idFactory: () => `m-${++id}`,
+			now: () => '2026-09-04T12:00:00.000Z',
+		})
 	}
 
 	it('authorizes only an active matching grant', () => {
@@ -51,5 +60,32 @@ describe('Digital Mirror mobility state', () => {
 				'2026-09-04T12:30:00.000Z',
 			),
 		).toBe(false)
+	})
+
+	it('emits ordered River evidence for progress, grant, and revocation', () => {
+		const evidence = makeEvidence()
+		const state = new DigitalMirrorMobilityState({
+			evidence,
+			sessionRef: 'dm-session-1',
+		})
+
+		state.progressTo('CONTEXT_KNOWN')
+		state.grant(grant)
+		state.revoke('grant-1')
+
+		expect(evidence.events.map((event) => event.type)).toEqual([
+			'DIGITAL_MIRROR_MOBILITY_STATE_CHANGED',
+			'MOBILITY_CAPABILITY_GRANTED',
+			'MOBILITY_CAPABILITY_REVOKED',
+		])
+		expect(evidence.events[1]).toMatchObject({
+			wardenDecisionRef: 'warden-1',
+			payload: {
+				grantId: 'grant-1',
+				capability: 'context-media-routing',
+				purpose: 'driver-media-personalization',
+			},
+		})
+		expect(evidence.events[2].priorEventRef).toBe('m-2')
 	})
 })
