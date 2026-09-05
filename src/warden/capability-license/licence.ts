@@ -1,4 +1,5 @@
 import type { CapabilityLicenseRegistry } from './registry'
+import { validateContextConstraint } from './constraints'
 
 export type ContextConstraint = {
 	key: string
@@ -69,6 +70,21 @@ export function validateCapabilityLicence(
 		const capability = capabilities.get(grant.capabilityId)
 		if (!capability || !capability.licensable) {
 			errors.push(`NON_LICENSABLE_CAPABILITY:${grant.grantId}:${grant.capabilityId}`)
+		}
+		if (capability && grant.capabilityVersion !== capability.version) {
+			errors.push(
+				`CAPABILITY_VERSION_MISMATCH:${grant.grantId}:${grant.capabilityId}:${grant.capabilityVersion}`,
+			)
+		}
+		for (const purposeId of grant.purposeIds) {
+			if (capability && !capability.allowedPurposeIds.includes(purposeId)) {
+				errors.push(`GRANT_BROADENS_CAPABILITY_PURPOSE:${grant.grantId}:${purposeId}`)
+			}
+		}
+		for (const constraint of grant.contextConstraints) {
+			for (const error of validateContextConstraint(constraint)) {
+				errors.push(`INVALID_CONTEXT_CONSTRAINT:${grant.grantId}:${error}`)
+			}
 		}
 
 		for (const effectId of grant.allowedEffectIds) {
