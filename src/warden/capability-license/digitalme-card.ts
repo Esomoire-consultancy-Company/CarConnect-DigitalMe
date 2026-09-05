@@ -41,6 +41,9 @@ function lifecycleState(
 	if (licence.status === 'EXPIRED' || Date.parse(at) >= Date.parse(licence.expiresAt)) {
 		return 'EXPIRED'
 	}
+	if (licence.status === 'DRAFT' || Date.parse(at) < Date.parse(licence.effectiveFrom)) {
+		return 'LICENSED_ENVELOPE'
+	}
 	return undefined
 }
 
