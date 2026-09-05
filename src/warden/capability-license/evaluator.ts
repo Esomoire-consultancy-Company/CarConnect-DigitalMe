@@ -86,6 +86,9 @@ export function evaluateCapabilityLicence(
 	if (request.relationshipRef !== licence.relationship.relationshipRef) {
 		return deny(input, 'RELATIONSHIP_MISMATCH')
 	}
+	if (request.licenceRef !== licence.licenceId) {
+		return deny(input, 'CAPABILITY_NOT_LICENSED')
+	}
 
 	if (licence.status === 'REVOKED') return deny(input, 'LICENCE_REVOKED')
 	if (licence.status === 'EXPIRED') return deny(input, 'LICENCE_EXPIRED')
@@ -150,6 +153,15 @@ export function evaluateCapabilityLicence(
 	const referencedAssertions = input.entitlements.filter((x) =>
 		request.externalEntitlementRefs.includes(x.entitlementId),
 	)
+	for (const entitlementId of requiredEntitlementIds) {
+		const assertion = referencedAssertions.find((x) => x.entitlementId === entitlementId)
+		if (
+			assertion &&
+			(assertion.subjectRef !== request.principalRef || assertion.capabilityId !== request.capabilityId)
+		) {
+			return deny(input, 'EXTERNAL_ENTITLEMENT_INVALID')
+		}
+	}
 	const entitlement = evaluateRequiredEntitlements(
 		requiredEntitlementIds,
 		referencedAssertions,
