@@ -168,4 +168,22 @@ describe('deterministic capability licence evaluator', () => {
 		f.licence.status = 'REVOKED'
 		expect(evaluateCapabilityLicence(f).reasonCodes).toEqual(['LICENCE_REVOKED'])
 	})
+
+	it('denies a request bound to a different licence reference', () => {
+		const f = validFixture()
+		f.request.licenceRef = 'OTHER'
+		expect(evaluateCapabilityLicence(f).reasonCodes).toEqual(['CAPABILITY_NOT_LICENSED'])
+	})
+
+	it('rejects an entitlement asserted for another principal', () => {
+		const f = validFixture()
+		f.entitlements[0].subjectRef = 'OTHER'
+		expect(evaluateCapabilityLicence(f).reasonCodes).toEqual(['EXTERNAL_ENTITLEMENT_INVALID'])
+	})
+
+	it('rejects an entitlement asserted for another capability', () => {
+		const f = validFixture()
+		f.entitlements[0].capabilityId = 'OTHER'
+		expect(evaluateCapabilityLicence(f).reasonCodes).toEqual(['EXTERNAL_ENTITLEMENT_INVALID'])
+	})
 })
