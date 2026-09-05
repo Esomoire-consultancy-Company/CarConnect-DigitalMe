@@ -118,4 +118,26 @@ describe('capability licence validation', () => {
 		value.grants[0].allowedDataClassIds = ['D1', 'D2']
 		expect(validateCapabilityLicence(value, testRegistry())).toContain('GRANT_BROADENS_CAPABILITY_DATA:G1:D2')
 	})
+
+	it('rejects a purpose outside the capability envelope', () => {
+		const value = licence()
+		value.grants[0].purposeIds = ['P1', 'P2']
+		expect(validateCapabilityLicence(value, testRegistry())).toContain('GRANT_BROADENS_CAPABILITY_PURPOSE:G1:P2')
+	})
+
+	it('rejects a capability version mismatch', () => {
+		const value = licence()
+		value.grants[0].capabilityVersion = '2'
+		expect(validateCapabilityLicence(value, testRegistry())).toContain('CAPABILITY_VERSION_MISMATCH:G1:SAFE_MEDIA:2')
+	})
+
+	it('rejects invalid bounded context constraints at compile time', () => {
+		const value = licence()
+		value.grants[0].contextConstraints = [
+			{ key: 'mode', operator: 'IN', value: 'PARKED', required: true },
+		]
+		expect(validateCapabilityLicence(value, testRegistry())).toContain(
+			'INVALID_CONTEXT_CONSTRAINT:G1:IN_REQUIRES_STRING_ARRAY',
+		)
+	})
 })
