@@ -6,6 +6,7 @@ on:
       - '.github/workflows/build-android.yml'
       - 'android/**'
       - 'src/wardenfm/**'
+      - 'src/warden/**'
       - 'src/player/**'
       - 'App.tsx'
       - 'index.js'
@@ -64,6 +65,12 @@ jobs:
 
       - name: 🛡 Run WardenFM contract tests
         run: bunx jest src/wardenfm/__tests__ --runInBand
+
+      - name: 🪪 Run Warden capability license contract tests
+        run: bunx jest src/warden/capability-license/__tests__ --runInBand
+
+      - name: 🧭 Typecheck repository
+        run: bunx tsc --noEmit
 
       - name: 🚀 Build Android release APK
         run: bun android-build
