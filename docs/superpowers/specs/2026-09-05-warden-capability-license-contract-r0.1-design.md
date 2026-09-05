@@ -11,15 +11,16 @@
 
 Create a reusable, machine-readable licensing contract that expresses what a DigitalMe relationship may potentially do, for which purposes, using which data, producing which effects, under which external entitlements, and for how long.
 
-The contract must compile human-readable licence terms into deterministic runtime inputs for Warden without embedding legal prose directly in application logic.
+The contract compiles human-readable licence terms into deterministic runtime inputs for Warden without embedding legal prose directly in application logic.
 
 The licence does **not** authorize execution by itself.
 
 ```text
 Licence = maximum permitted envelope
+Licence evaluation = deterministic envelope match/deny
 Warden decision = permission for this request now
 Deed = effect actually executed
-River = evidence of request, decision, execution, and verified effect
+River = evidence of request, evaluation, decision, execution, and verified effect
 ```
 
 ## 2. Core invariants
@@ -34,10 +35,11 @@ River = evidence of request, decision, execution, and verified effect
 8. User consent never substitutes for platform entitlement where platform entitlement is separately required.
 9. Platform entitlement never substitutes for Warden authorization.
 10. Execution requires every applicable gate to pass.
-11. Denies override allows within the same effective policy scope.
-12. Unknown/missing required context fails closed.
-13. Every mutable licence object is versioned, effective-dated, revocable, and evidence-linked.
+11. Global non-licensable definitions and explicit denies override allows.
+12. Unknown or missing required context fails closed.
+13. Every licence is versioned, effective-dated, revocable, and evidence-linked.
 14. Safety-critical capabilities may be globally non-licensable for a domain even when technically reachable.
+15. No implicit wildcard grant exists in R0.1.
 
 ## 3. Runtime decision equation
 
@@ -66,15 +68,13 @@ R0.1 defines four primary registries plus the compiled licence object.
 
 ### 4.1 Capability Registry
 
-Defines what bounded action or service capability exists.
-
 ```ts
 export type CapabilityDefinition = {
   capabilityId: string
   version: string
   domain: string
   description: string
-  requiredExternalEntitlements: string[]
+  requiredExternalEntitlementIds: string[]
   allowedPurposeIds: string[]
   allowedInputDataClassIds: string[]
   allowedEffectIds: string[]
@@ -83,7 +83,7 @@ export type CapabilityDefinition = {
 }
 ```
 
-Examples:
+Initial Mobility examples:
 
 - `WARDENFM_MEDIA_CONTROL`
 - `WARDENFM_CONTEXT_MEDIA_ROUTE`
@@ -92,11 +92,11 @@ Examples:
 - `MOBILITY_READ_ADAS_STATE`
 - `DIGITAL_MIRROR_MOBILITY_PROGRESS`
 
-A capability definition describes the maximum structural envelope. It does not grant the capability to any person or relationship.
+A capability definition describes the maximum structural envelope. It grants nothing to a person or relationship by itself.
 
 ### 4.2 Purpose Registry
 
-Purpose is first-class and must be referenced by stable ID rather than free text at runtime.
+Purpose is first-class and referenced by stable ID, not free text, at runtime.
 
 ```ts
 export type PurposeDefinition = {
@@ -118,11 +118,7 @@ Initial Mobility purpose IDs:
 - `MOBILITY_STEP_UP_CONFIRMATION`
 - `DIGITAL_MIRROR_MOBILITY_PROGRESSION`
 
-Purpose expansion must be additive and versioned.
-
 ### 4.3 Data-Class Registry
-
-Defines classes of data that a capability may consume or emit.
 
 ```ts
 export type DataClassDefinition = {
@@ -136,9 +132,7 @@ export type DataClassDefinition = {
 }
 ```
 
-Initial Mobility classes:
-
-Allowed examples:
+Initial Mobility allowed examples:
 
 - `TRAFFIC_STATE`
 - `ROUTE_COMPLEXITY`
@@ -174,9 +168,7 @@ export type EffectDefinition = {
 }
 ```
 
-Initial Mobility effects:
-
-Licensable:
+Initial Mobility licensable effects:
 
 - `MEDIA_PAUSE`
 - `MEDIA_RESUME`
@@ -196,16 +188,38 @@ Globally non-licensable in Mobility R0.1/R0.2:
 - `VEHICLE_ACC_CONTROL`
 - `VEHICLE_CAN_WRITE`
 - `ADB_EXECUTION`
+- `AUTOLINK_PRIVILEGED_EXECUTION`
 
-`AUTOLINK_PRIVILEGED_EXECUTION` remains non-licensable; Autolink is probe-only.
+Autolink remains probe-only.
 
-## 5. Licence object
+## 5. Deterministic context-constraint grammar
 
-A licence binds a principal/relationship to a bounded subset of registry capabilities.
+R0.1 does not accept arbitrary executable policy expressions. Grants use a bounded declarative grammar.
+
+```ts
+export type ContextConstraint = {
+  key: string
+  operator: 'EQ' | 'NEQ' | 'IN' | 'NOT_IN' | 'GTE' | 'LTE' | 'EXISTS'
+  value?: string | number | boolean | string[]
+  required: boolean
+}
+```
+
+Rules:
+
+- `EXISTS` ignores `value`.
+- `IN` and `NOT_IN` require `string[]`.
+- `GTE` and `LTE` require numeric request context.
+- A required constraint with a missing context key denies.
+- Unsupported operators or incompatible value types invalidate the licence at compile/validation time.
+- No arbitrary code, regex execution, script, or dynamic expression evaluation exists in R0.1.
+
+## 6. Licence object
 
 ```ts
 export type CapabilityLicence = {
   licenceId: string
+  licenceVersion: string
   schemaVersion: 'R0.1'
   holder: {
     principalType: 'DigitalMe'
@@ -223,12 +237,14 @@ export type CapabilityLicence = {
   status: 'DRAFT' | 'ACTIVE' | 'SUSPENDED' | 'REVOKED' | 'EXPIRED'
   genesisRecordRef: string
   issuedByRef: string
+  issuedAt: string
   wardenPolicyVersion: string
   riverEvidenceRef: string
   supersedesLicenceRef?: string
 }
 
 export type CapabilityLicenceGrant = {
+  grantId: string
   capabilityId: string
   capabilityVersion: string
   purposeIds: string[]
@@ -236,8 +252,8 @@ export type CapabilityLicenceGrant = {
   prohibitedDataClassIds: string[]
   allowedEffectIds: string[]
   prohibitedEffectIds: string[]
-  requiredExternalEntitlements: string[]
-  contextConstraints: Record<string, string | number | boolean | string[]>
+  requiredExternalEntitlementIds: string[]
+  contextConstraints: ContextConstraint[]
   confirmationPolicy?: {
     required: boolean
     admittedFactors: Array<'VOICE_CONFIRMATION' | 'GESTURE_CONFIRMATION' | 'TOUCH_CONFIRMATION'>
@@ -245,11 +261,18 @@ export type CapabilityLicenceGrant = {
 }
 ```
 
-The licence is invalid if `expiresAt <= effectiveFrom`.
+Validation requirements:
 
-## 6. External entitlement model
+- `expiresAt > effectiveFrom`;
+- every `grantId` is unique within the licence;
+- every referenced registry ID/version exists;
+- a grant cannot include a globally non-licensable capability or effect;
+- an item present in both allow and prohibit lists is treated as prohibited and should be rejected at compile time as contradictory;
+- the licence cannot broaden the referenced Capability Registry definition.
 
-External entitlement is modeled separately from the Warden licence.
+## 7. External entitlement model
+
+External entitlement is separate from the Warden licence.
 
 ```ts
 export type ExternalEntitlementAssertion = {
@@ -264,19 +287,13 @@ export type ExternalEntitlementAssertion = {
 }
 ```
 
-Examples:
+Examples include Android/AAOS permissions, Apple/CarPlay entitlements, OEM feature availability, music-provider rights, or enterprise contract entitlements.
 
-- Android/AAOS permission or API entitlement;
-- Apple/CarPlay entitlement;
-- OEM vehicle feature availability;
-- music-provider playback/control permission;
-- enterprise contract entitlement.
+A required entitlement denies when missing, `INVALID`, `UNKNOWN`, or expired at request time.
 
-A Warden licence may require one or more external entitlements. Missing or `UNKNOWN` entitlement fails closed for any capability that requires it.
+## 8. Admission request
 
-## 7. Admission request
-
-Runtime callers must ask for a specific deed, not a generic licence check.
+Runtime callers ask for a specific deed, not a generic licence check.
 
 ```ts
 export type CapabilityAdmissionRequest = {
@@ -296,82 +313,104 @@ export type CapabilityAdmissionRequest = {
 }
 ```
 
-The compiler/evaluator returns a structured result.
+## 9. Two-stage decision model
+
+Licence evaluation and Warden authorization are deliberately separate.
+
+### Stage A — pure licence evaluation
 
 ```ts
-export type CapabilityAdmissionDecision = {
+export type LicenceEvaluationResult = {
+  decision: 'MATCH' | 'DENY'
+  reasonCodes: LicenceReasonCode[]
+  matchedGrantRef?: string
+  licenceRef: string
+  licenceVersion: string
+  evaluatedAt: string
+}
+```
+
+A `MATCH` means only that the request fits the maximum licence envelope.
+
+### Stage B — external Warden runtime decision
+
+```ts
+export type WardenCapabilityDecision = {
   decision: 'ALLOW' | 'DENY'
   reasonCodes: string[]
-  matchedGrantRef?: string
+  licenceEvaluationRef: string
   wardenDecisionRef: string
   policyVersion: string
   evaluatedAt: string
 }
 ```
 
-## 8. Deterministic deny reasons
+The kernel exposes an interface/port to Warden; it does not implement Warden authority internally.
 
-R0.1 standard reason codes:
+A deed may execute only when Stage A returns `MATCH` and Stage B returns `ALLOW`.
 
-- `PRINCIPAL_MISMATCH`
-- `RELATIONSHIP_MISMATCH`
-- `LICENCE_NOT_ACTIVE`
-- `LICENCE_NOT_EFFECTIVE`
-- `LICENCE_EXPIRED`
-- `LICENCE_REVOKED`
-- `CAPABILITY_NOT_LICENSED`
-- `CAPABILITY_NOT_LICENSABLE`
-- `PURPOSE_NOT_ALLOWED`
-- `DATA_CLASS_NOT_ALLOWED`
-- `DATA_CLASS_PROHIBITED`
-- `EFFECT_NOT_ALLOWED`
-- `EFFECT_PROHIBITED`
-- `EFFECT_NOT_LICENSABLE`
-- `EXTERNAL_ENTITLEMENT_MISSING`
-- `EXTERNAL_ENTITLEMENT_INVALID`
-- `EXTERNAL_ENTITLEMENT_UNKNOWN`
-- `CONTEXT_CONSTRAINT_FAILED`
-- `CONFIRMATION_REQUIRED`
-- `CONFIRMATION_INVALID`
-- `WARDEN_DENIED`
+## 10. Deterministic licence reason codes
 
-Reason-code output must be stable enough for River evidence, UI explanation, and test assertions.
+```ts
+export type LicenceReasonCode =
+  | 'PRINCIPAL_MISMATCH'
+  | 'RELATIONSHIP_MISMATCH'
+  | 'LICENCE_NOT_ACTIVE'
+  | 'LICENCE_NOT_EFFECTIVE'
+  | 'LICENCE_EXPIRED'
+  | 'LICENCE_REVOKED'
+  | 'CAPABILITY_NOT_LICENSED'
+  | 'CAPABILITY_NOT_LICENSABLE'
+  | 'PURPOSE_NOT_ALLOWED'
+  | 'DATA_CLASS_NOT_ALLOWED'
+  | 'DATA_CLASS_PROHIBITED'
+  | 'EFFECT_NOT_ALLOWED'
+  | 'EFFECT_PROHIBITED'
+  | 'EFFECT_NOT_LICENSABLE'
+  | 'EXTERNAL_ENTITLEMENT_MISSING'
+  | 'EXTERNAL_ENTITLEMENT_INVALID'
+  | 'EXTERNAL_ENTITLEMENT_UNKNOWN'
+  | 'EXTERNAL_ENTITLEMENT_EXPIRED'
+  | 'CONTEXT_REQUIRED_MISSING'
+  | 'CONTEXT_CONSTRAINT_FAILED'
+  | 'CONFIRMATION_REQUIRED'
+  | 'CONFIRMATION_INVALID'
+```
 
-## 9. Precedence rules
+Warden may add its own decision reason codes after licence matching, including `WARDEN_DENIED`.
 
-When multiple registry/licence terms apply:
+## 11. Precedence rules
 
-1. Global `licensable: false` overrides every allow.
-2. Explicit prohibited effect/data class overrides an allowed list entry.
-3. Expiry/revocation overrides all grants.
-4. Relationship-specific scope overrides broader domain scope.
-5. Missing required external entitlement denies.
-6. Missing required purpose/data/effect information denies.
+1. Registry `licensable: false` overrides every allow.
+2. Explicit prohibited effect/data class overrides an allowed entry.
+3. Revoked, suspended, expired, future, or otherwise inactive licence state denies all grants.
+4. The request principal and relationship must exactly match the licence binding in R0.1.
+5. Missing/unknown/invalid/expired required external entitlement denies.
+6. Missing required purpose/data/effect/context information denies.
 7. A successful licence match still requires Warden runtime allow.
+8. No implicit domain-wide, organization-wide, or wildcard inheritance exists in R0.1.
 
-No implicit wildcard exists in R0.1.
+## 12. DigitalMe Card projection
 
-## 10. Human-readable DigitalMe Card projection
-
-The DigitalMe Card is a projection of the canonical licence, not the canonical licence itself.
+The DigitalMe Card is a projection of canonical Genesis licence state, not authority storage.
 
 For each capability it may show:
 
-- capability name and current licence state;
-- purpose(s);
-- permitted data classes;
-- prohibited data classes;
-- permitted effects;
+- capability and licence version;
+- current licence lifecycle state;
+- purposes;
+- permitted/prohibited data classes;
+- permitted/prohibited effects;
 - relationship/location/device scope;
 - effective time and expiry;
 - external entitlement dependency;
-- latest Warden policy version;
-- River evidence link;
+- Warden policy version;
+- River evidence reference;
 - revoke/suspend action where the actor has authority.
 
-The Card must never display a capability as simply “Allowed” when an external entitlement or runtime Warden decision is still required. Preferred states:
+The Card must distinguish licence-envelope status from current runtime executability. Preferred states:
 
-- `LICENSED`
+- `LICENSED_ENVELOPE`
 - `LICENSED_EXTERNAL_ENTITLEMENT_REQUIRED`
 - `AVAILABLE_WARDEN_ADMISSION_REQUIRED`
 - `SUSPENDED`
@@ -380,17 +419,16 @@ The Card must never display a capability as simply “Allowed” when an externa
 - `NOT_LICENSED`
 - `NON_LICENSABLE`
 
-## 11. Mobility R0.2 profile
+It must never imply that `LICENSED_ENVELOPE` means “may execute now.”
 
-The first profile consumes the generic kernel as follows.
+## 13. Mobility R0.2 profile
 
 ### `WARDEN-MOBILITY-CAPABILITY-LICENSE-001`
 
 Recommended grants:
 
 1. `WARDENFM_MEDIA_CONTROL`
-   - purposes: `DRIVER_MEDIA_CONTROL`
-   - data: no raw cabin media required
+   - purpose: `DRIVER_MEDIA_CONTROL`
    - effects: pause/resume/next/previous
 
 2. `WARDENFM_CONTEXT_MEDIA_ROUTE`
@@ -400,12 +438,12 @@ Recommended grants:
 
 3. `WARDEN_VOICE_INTENT`
    - purpose-bound microphone admission required upstream
-   - normalized `VOICE_INTENT_TOKEN` only enters the licensing/evidence kernel
+   - only normalized `VOICE_INTENT_TOKEN` enters the licensing/evidence kernel
    - voice is not identity or authority
 
 4. `WARDEN_GESTURE_INTENT`
    - purpose-bound camera admission required upstream
-   - normalized `GESTURE_INTENT_TOKEN` only enters the licensing/evidence kernel
+   - only normalized `GESTURE_INTENT_TOKEN` enters the licensing/evidence kernel
    - gesture may satisfy step-up only when a trusted DigitalMe session and pending request already exist
 
 5. `MOBILITY_READ_ADAS_STATE`
@@ -415,11 +453,11 @@ Recommended grants:
 
 6. `DIGITAL_MIRROR_MOBILITY_PROGRESS`
    - permits scoped capability-progression bookkeeping
-   - any resulting capability use still requires its own Warden admission
+   - resulting capability use still requires its own licence match and Warden admission
 
-## 12. Evidence spine
+## 14. Evidence spine
 
-Additive licence/evaluation River event types:
+Additive River event types:
 
 - `CAPABILITY_LICENCE_ISSUED`
 - `CAPABILITY_LICENCE_ACTIVATED`
@@ -435,9 +473,9 @@ Additive licence/evaluation River event types:
 
 Evidence payloads contain IDs, versions, normalized classes, reason codes, decision refs, and effect outcomes. They must not contain provider secrets, raw cabin media, biometric templates, or unrestricted third-party content.
 
-## 13. Lifecycle and supersession
+## 15. Lifecycle and supersession
 
-Licence mutations are append-only lifecycle changes, not in-place historical rewrites.
+Licence lifecycle:
 
 ```text
 DRAFT
@@ -448,14 +486,13 @@ DRAFT
 ACTIVE → EXPIRED
 ```
 
-A materially changed licence is issued as a new version/record and may reference `supersedesLicenceRef`. Prior River evidence remains immutable.
+Lifecycle changes are recorded as new evidence-bearing transitions, not historical rewrites. A materially changed licence is issued as a new `licenceVersion`/record and references `supersedesLicenceRef` where applicable. Prior River evidence remains immutable.
 
-## 14. Separation of duties
+## 16. Separation of duties
 
 ### Genesis
 
-- licence identity;
-- canonical registry record;
+- licence identity and canonical record;
 - version/effective date/supersession;
 - DigitalMe relationship binding.
 
@@ -470,7 +507,7 @@ A materially changed licence is issued as a new version/record and may reference
 ### River
 
 - lifecycle evidence;
-- request/decision/effect receipts;
+- request/evaluation/decision/effect receipts;
 - effect verification.
 
 ### Synnergyze
@@ -485,58 +522,59 @@ A materially changed licence is issued as a new version/record and may reference
 - user-facing projection and control surface;
 - not canonical authority storage.
 
-## 15. Implementation decomposition
+## 17. Implementation decomposition
 
 R0.1 implementation should be split into independently testable slices:
 
 1. **Registry contracts** — capability, purpose, data class, effect definitions and validation.
-2. **Licence contract** — lifecycle, grant validation, expiry, revocation, supersession references.
-3. **External entitlement assertions** — normalized external prerequisite checks.
-4. **Deterministic licence evaluator** — pure evaluation of principal/relationship/licence/purpose/data/effect/context/entitlement.
-5. **Warden admission adapter** — inject external Warden runtime decision after licence evaluation; never implement Warden authority inside the kernel.
-6. **River evidence adapter** — append-only normalized decision/effect evidence.
-7. **Mobility profile adapter** — map Warden Mobility R0.2 capabilities/effects to generic registry IDs.
-8. **DigitalMe Card projection** — read-only derived state model, not UI implementation in R0.1.
+2. **Licence contract** — grant IDs, lifecycle, expiry, revocation, supersession, contradiction checks.
+3. **Context-constraint evaluator** — bounded operator grammar only.
+4. **External entitlement assertions** — normalized external prerequisite checks.
+5. **Deterministic licence evaluator** — principal/relationship/licence/purpose/data/effect/context/entitlement.
+6. **Warden admission port** — inject external Warden runtime decision after licence evaluation.
+7. **River evidence adapter** — append-only normalized lifecycle/evaluation/decision/effect evidence.
+8. **Mobility profile adapter** — map Warden Mobility R0.2 capability/effect vocabulary to generic registry IDs.
+9. **DigitalMe Card projection** — read-only derived state model; no UI implementation required in R0.1.
 
-## 16. Acceptance criteria
+## 18. Acceptance criteria
 
 R0.1 is portable-contract complete only when:
 
-1. Global non-licensable effects cannot be granted by any licence.
+1. Global non-licensable effects/capabilities cannot be granted by any licence.
 2. Principal and relationship mismatches fail closed.
-3. Inactive, future, expired, suspended, or revoked licences deny.
-4. Purpose is mandatory and must be allowlisted.
-5. Input data classes are checked against both allowed and prohibited lists.
-6. Requested effects are checked against registry licensability plus licence allow/deny lists.
-7. Required external entitlement `UNKNOWN`, missing, or invalid states deny.
-8. Context constraints are deterministic and missing required context denies.
-9. Licence match alone cannot execute a deed; Warden runtime decision remains mandatory.
-10. Deny reason codes are deterministic and evidence-safe.
-11. Lifecycle changes are evidence-linked and historical records are not silently rewritten.
-12. DigitalMe Card projection distinguishes licensed capability from current executable availability.
+3. Draft, future, suspended, expired, or revoked licences deny.
+4. Purpose is mandatory and allowlisted.
+5. Input data classes are checked against both registry and licence allow/prohibit rules.
+6. Requested effects are checked against registry licensability and licence allow/prohibit rules.
+7. Required external entitlement missing, `UNKNOWN`, invalid, or expired denies.
+8. Context constraints use only the bounded grammar; missing required context denies.
+9. Licence match cannot execute a deed; external Warden runtime allow remains mandatory.
+10. Licence reason codes are deterministic and evidence-safe.
+11. Lifecycle changes and supersession are evidence-linked; historical records are not silently rewritten.
+12. DigitalMe Card projection distinguishes licence envelope from current executable availability.
 13. Mobility profile cannot license steering, braking, throttle, AEB/ACC control, CAN write, ADB execution, or Autolink privileged execution.
 14. Voice/gesture remain interaction/confirmation primitives, not identity or standalone authority.
 15. The kernel contains no provider credentials, raw camera frames, continuous raw audio, or biometric templates.
 16. Warden Mobility R0.2 can consume the kernel without duplicating licence semantics inside mobility application code.
+17. Every matched grant has a stable `grantId` that can be referenced by River evidence.
+18. External entitlement and Warden decision evidence are separable from licence-match evidence.
 
-## 17. Explicitly deferred
+## 19. Explicitly deferred
 
 - jurisdiction-specific legal drafting;
-- consumer contract text/terms presentation;
+- consumer contract/terms presentation;
 - regulatory classification by country;
 - billing/settlement entitlements;
-- SILK commercial settlement integration;
+- SILK settlement integration;
 - cryptographic licence signing format;
-- distributed federation between multiple sovereign Wardens;
+- federation between sovereign Wardens;
 - native DigitalMe Card UI;
 - safety-critical vehicle actuation licensing;
-- wildcard grants.
+- wildcard or inherited grants.
 
-These may be added in later versions without weakening R0.1 deny precedence or separation of duties.
+These may be added later without weakening R0.1 deny precedence or separation of duties.
 
-## 18. Release posture
-
-Until runtime integration and formal repository verification are complete, use:
+## 20. Release posture
 
 ```text
 Contract state: DESIGN_FROZEN / PORTABLE_IMPLEMENTATION_PENDING
