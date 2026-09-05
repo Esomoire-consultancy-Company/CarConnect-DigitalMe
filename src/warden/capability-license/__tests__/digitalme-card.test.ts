@@ -61,4 +61,28 @@ describe('DigitalMe capability card projection', () => {
 		)
 		expect(card.capabilities.every((x) => x.state === 'EXPIRED')).toBe(true)
 	})
+
+	it('keeps draft licences as envelope-only state', () => {
+		const value = licence()
+		value.status = 'DRAFT'
+		const card = projectDigitalMeCapabilityCard(
+			value,
+			WARDEN_MOBILITY_REGISTRY_R01,
+			[],
+			'2026-09-05T12:00:00Z',
+		)
+		expect(card.capabilities.every((x) => x.state === 'LICENSED_ENVELOPE')).toBe(true)
+	})
+
+	it('keeps future licences as envelope-only state', () => {
+		const value = licence()
+		value.effectiveFrom = '2026-09-05T13:00:00Z'
+		const card = projectDigitalMeCapabilityCard(
+			value,
+			WARDEN_MOBILITY_REGISTRY_R01,
+			[],
+			'2026-09-05T12:00:00Z',
+		)
+		expect(card.capabilities.every((x) => x.state === 'LICENSED_ENVELOPE')).toBe(true)
+	})
 })
