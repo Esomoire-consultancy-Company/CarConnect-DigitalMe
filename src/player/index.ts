@@ -1,34 +1,58 @@
+import { Platform } from 'react-native'
 import TrackPlayer, { Event } from 'react-native-track-player'
 import { SKIP_TO_PREVIOUS_THRESHOLD } from '../configs/player.config'
 import { CarPlay } from 'react-native-carplay'
+import { initializeAndroidAutoProjection } from '../wardenfm/android-connection'
+import { AndroidAutoProjectionLifecycle } from '../wardenfm/android-projection-lifecycle'
+import { createNativeAndroidCarConnectionPort } from '../wardenfm/native-android-car-connection'
+import { createGovernedPlaybackHandlers } from '../wardenfm/playback-gate'
+import {
+	connectWardenFmVehicle,
+	disconnectWardenFmVehicle,
+	failClosedWardenFmVehicle,
+	wardenFmVehicleSession,
+} from '../wardenfm/runtime'
+
+const androidAutoProjectionLifecycle = new AndroidAutoProjectionLifecycle(
+	initializeAndroidAutoProjection,
+)
 
 /**
  * Jellify Playback Service.
  *
  * Sets up event listeners for remote control events and
- * runs for the duration of the app lifecycle
+ * runs for the duration of the app lifecycle.
+ *
+ * Vehicle-originated effects are fail-closed through WardenFM. TrackPlayer
+ * remains the media engine and does not grant itself vehicle authority.
  */
 export async function PlaybackService() {
-	TrackPlayer.addEventListener(Event.RemotePlay, async () => {
-		await TrackPlayer.play()
-	})
-	TrackPlayer.addEventListener(Event.RemotePause, async () => {
-		await TrackPlayer.pause()
-	})
+	if (Platform.OS === 'android') {
+		const androidConnectionPort = createNativeAndroidCarConnectionPort()
+		if (!androidConnectionPort) {
+			androidAutoProjectionLifecycle.reset(() => disconnectWardenFmVehicle())
+			failClosedWardenFmVehicle('android-auto')
+		} else {
+			await androidAutoProjectionLifecycle.replace(androidConnectionPort, {
+				onConnect: () => connectWardenFmVehicle('android-auto'),
+				onDisconnect: () => disconnectWardenFmVehicle(),
+				onFailure: () => failClosedWardenFmVehicle('android-auto'),
+			})
+		}
+	}
 
-	TrackPlayer.addEventListener(Event.RemoteNext, async () => {
-		await TrackPlayer.skipToNext()
-	})
+	const governed = createGovernedPlaybackHandlers(
+		wardenFmVehicleSession,
+		TrackPlayer,
+		SKIP_TO_PREVIOUS_THRESHOLD,
+	)
 
-	TrackPlayer.addEventListener(Event.RemotePrevious, async () => {
-		const progress = await TrackPlayer.getProgress()
-
-		if (progress.position < SKIP_TO_PREVIOUS_THRESHOLD) await TrackPlayer.skipToPrevious()
-		else await TrackPlayer.seekTo(0)
-	})
-
+	TrackPlayer.addEventListener(Event.RemotePlay, governed.play)
+	TrackPlayer.addEventListener(Event.RemotePause, governed.pause)
+	TrackPlayer.addEventListener(Event.RemoteNext, governed.next)
+	TrackPlayer.addEventListener(Event.RemotePrevious, governed.previous)
 	TrackPlayer.addEventListener(Event.RemoteSeek, async (event) => {
-		await TrackPlayer.seekTo(event.position)
+		await governed.seek(event.position)
 	})
 }
 
