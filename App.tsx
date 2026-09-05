@@ -31,6 +31,12 @@ import { CarPlay } from 'react-native-carplay'
 import { useAutoStore } from './src/stores/auto'
 import { registerAutoService } from './src/player'
 import QueryPersistenceConfig from './src/configs/query-persistence.config'
+import { initializeAndroidAutoProjection } from './src/wardenfm/android-connection'
+import { createNativeAndroidCarConnectionPort } from './src/wardenfm/native-android-car-connection'
+import {
+	connectWardenFmVehicle,
+	disconnectWardenFmVehicle,
+} from './src/wardenfm/runtime'
 
 LogBox.ignoreAllLogs()
 
@@ -45,6 +51,8 @@ export default function App(): React.JSX.Element {
 	const playerInitializedRef = useRef<boolean>(false)
 
 	const onConnect = () => {
+		if (Platform.OS === 'ios') connectWardenFmVehicle('carplay')
+
 		const api = getApi()
 
 		if (api) {
@@ -57,7 +65,10 @@ export default function App(): React.JSX.Element {
 		setIsConnected(true)
 	}
 
-	const onDisconnect = () => setIsConnected(false)
+	const onDisconnect = () => {
+		if (Platform.OS === 'ios') disconnectWardenFmVehicle()
+		setIsConnected(false)
+	}
 
 	useEffect(() => {
 		// Guard against double initialization (React StrictMode, hot reload)
@@ -72,16 +83,14 @@ export default function App(): React.JSX.Element {
 				IOSCategoryOptions.AllowBluetooth,
 			],
 			androidAudioContentType: AndroidAudioContentType.Music,
-			minBuffer: 30, // 30 seconds minimum buffer
+			minBuffer: 30,
 			...BUFFERS,
 		})
 			.then(() =>
 				TrackPlayer.updateOptions({
 					capabilities: CAPABILITIES,
 					notificationCapabilities: CAPABILITIES,
-					// Reduced interval for smoother progress tracking and earlier prefetch detection
 					progressUpdateEventInterval: PROGRESS_UPDATE_EVENT_INTERVAL,
-					// Stop playback and remove notification when app is killed to prevent battery drain
 					android: {
 						appKilledPlaybackBehavior:
 							AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
@@ -89,8 +98,6 @@ export default function App(): React.JSX.Element {
 				}),
 			)
 			.catch((error) => {
-				// Player may already be initialized (e.g., after hot reload)
-				// This is expected and not a fatal error
 				console.log('[TrackPlayer] Setup caught:', error?.message ?? error)
 			})
 			.finally(() => {
@@ -98,8 +105,32 @@ export default function App(): React.JSX.Element {
 				requestStoragePermission()
 			})
 
-		return registerAutoService(onConnect, onDisconnect)
-	}, []) // Empty deps - only run once on mount
+		const unregisterAutoService = registerAutoService(onConnect, onDisconnect)
+		const androidConnectionPort = createNativeAndroidCarConnectionPort()
+		let unregisterAndroidAuto = () => undefined
+		let disposed = false
+
+		if (androidConnectionPort) {
+			void initializeAndroidAutoProjection(
+				androidConnectionPort,
+				() => setIsConnected(true),
+				() => setIsConnected(false),
+			)
+				.then((cleanup) => {
+					if (disposed) cleanup()
+					else unregisterAndroidAuto = cleanup
+				})
+				.catch(() => {
+					if (!disposed) setIsConnected(false)
+				})
+		}
+
+		return () => {
+			disposed = true
+			unregisterAndroidAuto()
+			unregisterAutoService()
+		}
+	}, [])
 
 	const [reloader, setReloader] = useState(0)
 
